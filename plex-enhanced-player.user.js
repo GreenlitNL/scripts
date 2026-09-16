@@ -3,7 +3,7 @@
 // @namespace    https://github.com/GreenlitNL/scripts
 // @version      6.0.0
 // @description  All-in-one player enhancements for Plex Web: aspect ratio crop ('C' key), cinema black theater backdrop (no white bars), 5s skip forward & backward ('ArrowRight'/'ArrowLeft' + matching '5' icons), playback speed controls ('[' and ']'), and persistent dual-setting player status HUD ('I' key)
-// @author       sidharth1212
+// @author       GreenlitNL
 // @match        *://app.plex.tv/*
 // @match        *://*.plex.tv/*
 // @match        *://localhost:32400/web/*

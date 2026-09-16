@@ -3,7 +3,7 @@
 // @namespace    https://github.com/GreenlitNL/scripts
 // @version      999.0.0
 // @description  Local development loader for Plex Enhanced Player. Loads local file directly so edits take effect on page refresh.
-// @author       sidharth1212
+// @author       GreenlitNL
 // @match        *://app.plex.tv/*
 // @match        *://*.plex.tv/*
 // @match        *://localhost:32400/web/*
