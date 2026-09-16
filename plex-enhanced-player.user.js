@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Plex: Enhanced Player (Video Crop, 5s Skip Forward & Backward, Speed Control)
-// @namespace    https://github.com/sidharth1212/scripts
+// @namespace    https://github.com/GreenlitNL/scripts
 // @version      6.0.0
 // @description  All-in-one player enhancements for Plex Web: aspect ratio crop ('C' key), cinema black theater backdrop (no white bars), 5s skip forward & backward ('ArrowRight'/'ArrowLeft' + matching '5' icons), playback speed controls ('[' and ']'), and persistent dual-setting player status HUD ('I' key)
 // @author       sidharth1212
@@ -12,8 +12,8 @@
 // @match        *://10.*:32400/web/*
 // @match        *://172.16.*:32400/web/*
 // @match        *://*.plex.direct:32400/web/*
-// @updateURL    https://raw.githubusercontent.com/sidharth1212/scripts/main/plex-enhanced-player.user.js
-// @downloadURL  https://raw.githubusercontent.com/sidharth1212/scripts/main/plex-enhanced-player.user.js
+// @updateURL    https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player.user.js
+// @downloadURL  https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player.user.js
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==

@@ -8,7 +8,7 @@ A collection of custom Tampermonkey userscripts for personal web browsing enhanc
 
 ### 1. Plex: Enhanced Player
 > **File:** [`plex-enhanced-player.user.js`](./plex-enhanced-player.user.js)  
-> **Install URL:** [Install via Tampermonkey](https://raw.githubusercontent.com/sidharth1212/scripts/main/plex-enhanced-player.user.js)
+> **Install URL:** [Install via Tampermonkey](https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player.user.js)
 
 All-in-one player enhancements for Plex Web (`app.plex.tv` and local Plex Web servers):
 
