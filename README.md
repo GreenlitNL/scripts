@@ -1,66 +1,65 @@
 # Userscripts
 
-A curated collection of custom Tampermonkey userscripts for personal web browsing enhancements, productivity, and automation.
+Personal collection of custom Tampermonkey userscripts for web enhancements and productivity.
 
 ---
 
-## Available Scripts
+## ⚡ Quick Install
+
+| Script | Target | Direct Install | Dev Loader |
+| :--- | :--- | :--- | :--- |
+| **Plex: Enhanced Player** | Plex Web (`app.plex.tv`, local servers) | [Install Script ➔](https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player.user.js) | [`plex-enhanced-player.dev.user.js`](./plex-enhanced-player.dev.user.js) |
+| **Todoist: Enhanced** | Todoist Web (`app.todoist.com`) | [Install Script ➔](https://raw.githubusercontent.com/GreenlitNL/scripts/main/todoist-enhanced.user.js) | [`todoist-enhanced.dev.user.js`](./todoist-enhanced.dev.user.js) |
+
+*Clicking an **Install Script** link above will automatically open Tampermonkey's installation dialog in Chrome.*
+
+---
+
+## 📖 Scripts Overview
 
 ### 1. Plex: Enhanced Player
-> **File:** [`plex-enhanced-player.user.js`](./plex-enhanced-player.user.js)  
-> **Install URL:** [Install via Tampermonkey](https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player.user.js)  
-> **Dev Loader:** [`plex-enhanced-player.dev.user.js`](./plex-enhanced-player.dev.user.js)
+Adds missing player controls, custom aspect-ratio cropping, 5-second skips, and an on-screen display (OSD) HUD.
 
-All-in-one player enhancements for Plex Web (`app.plex.tv` and local Plex Web servers):
+| Shortcut | Action |
+| :--- | :--- |
+| <kbd>C</kbd> | Cycle aspect ratio crop presets (16:9, 21:9, 2.35:1, Fill, Original) |
+| <kbd>→</kbd> / <kbd>←</kbd> | Jump forward / backward by **5 seconds** (with on-screen badge) |
+| <kbd>[</kbd> / <kbd>]</kbd> | Decrease / increase playback speed (0.5x – 2.0x) |
+| <kbd>I</kbd> | Toggle persistent player status HUD (crop mode, speed, status) |
 
-* **Aspect Ratio Crop (`C` key):** Cycle through crop presets (16:9, 21:9, 2.35:1, Fill, Original) to remove letterboxing/pillarboxing.
-* **Cinema Black Theater Backdrop:** Ensures pitch-black pillarbox/letterbox bars with no grey/white flashes.
-* **5-Second Skip (`ArrowLeft` / `ArrowRight`):** Precise 5-second skips with custom on-screen 5s indicator badges.
-* **Playback Speed Controls (`[` and `]`):** Fine-grained speed increments from 0.5x to 2.0x.
-* **Player HUD / OSD (`I` key):** Persistent toggleable on-screen display for video status, aspect ratio, and speed.
+*Also enforces a true cinema-black theater backdrop to eliminate white/grey letterbox flashes.*
 
 ---
 
 ### 2. Todoist: Enhanced
-> **File:** [`todoist-enhanced.user.js`](./todoist-enhanced.user.js)  
-> **Install URL:** [Install via Tampermonkey](https://raw.githubusercontent.com/GreenlitNL/scripts/main/todoist-enhanced.user.js)  
-> **Dev Loader:** [`todoist-enhanced.dev.user.js`](./todoist-enhanced.dev.user.js)
+Combines day-planning section classification, quick-wins sizing, and automatic default due dates into a single high-efficiency engine.
 
-Consolidated productivity enhancements for Todoist Web (`app.todoist.com`):
-
-* **Time-Based Day Planning Headings:** Automatically groups and labels sections as **Ochtend**, **Middag**, **Avond**, **Hele dag**, or **Wachten** based on task times and keywords on planning filters (`taken`, `habits`, `routines`).
-* **Quick Wins Size Headings:** Dynamically renames section headers in the Quick Wins filter according to task size and priority tags (**XS**, **S**, **M**, **L**, **XL**, **Wachten**).
-* **Auto-Default Due Date to "Vandaag":** When opening the new task editor on designated filter pages (`taken`, `habits`, `routines`, `quick-wins`, `vandaag-persoonlijk`, `vandaag-post-nl`), automatically selects "Vandaag" if no due date is currently set.
-* **High-Efficiency Single Engine:** Replaces multiple independent observers and intervals with a unified SPA router and a single debounced DOM observer.
+* **Day Planning Headings:** Groups sections into **Ochtend**, **Middag**, **Avond**, **Hele dag**, and **Wachten** based on task times and keywords on planning filters (`taken`, `habits`, `routines`).
+* **Quick Wins Size Headings:** Dynamically labels sections according to task size and priority tags (**XS**, **S**, **M**, **L**, **XL**, **Wachten**) on the Quick Wins page.
+* **Auto-Default "Vandaag":** Automatically sets the due date to "Vandaag" when opening the task editor on planning and filter views if no date is set.
+* **Unified Engine:** Single debounced DOM observer and SPA router that prevents performance overhead.
 
 ---
 
-## Installation & Automatic Updates
+## 💻 Local Development Setup (Instant Reload)
 
-### Standard Installation
-1. Install [Tampermonkey](https://www.tampermonkey.net/) in Google Chrome.
-2. Click the install link for whichever script you want above.
-3. Tampermonkey will recognize the script and prompt you to click **Install**.
+Test local changes instantly in your browser without committing or waiting for GitHub caches:
 
-### Automatic Updates
-Every script in this repository includes `@updateURL` and `@downloadURL` headers pointing to GitHub. Tampermonkey checks for updates automatically according to your Tampermonkey settings (or when you manually click **Check for script updates** in the dashboard).
+1. Open `chrome://extensions` in Chrome.
+2. Enable **Developer mode** (top-right toggle).
+3. Click **Details** on **Tampermonkey** and switch ON **"Allow access to file URLs"**.
+4. In Tampermonkey dashboard, create a new script and paste the contents of the matching `.dev.user.js` file:
+   * [`plex-enhanced-player.dev.user.js`](./plex-enhanced-player.dev.user.js)
+   * [`todoist-enhanced.dev.user.js`](./todoist-enhanced.dev.user.js)
+5. Save. Any edits you make to the `.user.js` file in your editor will now take effect immediately upon browser refresh (`Cmd + R`).
 
-To release an update:
-1. Update the code in the script file.
-2. Bump the `@version` number in the metadata header (e.g. `1.0.0` -> `1.1.0`).
+---
+
+## 🔄 Releasing Updates
+
+All scripts use `@updateURL` and `@downloadURL` pointing to this repository.
+
+1. Make your code changes in `*.user.js`.
+2. Bump `@version` in the userscript header (e.g. `1.0.0` → `1.1.0`).
 3. Commit and push to `main`.
-
----
-
-## Local Development Workflow (Instant Refresh)
-
-Instead of committing and pushing to GitHub just to test a single code change:
-
-1. Open Chrome and navigate to `chrome://extensions`.
-2. Locate **Tampermonkey** and click **Details**.
-3. Toggle ON **"Allow access to file URLs"**.
-4. (Chrome MV3) Ensure **Developer mode** is enabled in `chrome://extensions` (toggle in the top-right corner).
-5. In Tampermonkey, install the corresponding dev loader stub:
-   * For Plex: [`plex-enhanced-player.dev.user.js`](./plex-enhanced-player.dev.user.js)
-   * For Todoist: [`todoist-enhanced.dev.user.js`](./todoist-enhanced.dev.user.js)
-6. Now you can edit the `.user.js` files on disk in your editor, save, and simply refresh the browser tab. Your changes will take effect immediately.
+4. Tampermonkey will automatically detect and install the update for users.
