@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Todoist: Enhanced (Day Planning, Quick Wins & Daily Main Goal)
 // @namespace    https://github.com/GreenlitNL/scripts
-// @version      2.7.0
+// @version      2.7.1
 // @description  All-in-one productivity enhancements for Todoist: Day Planning section headings, Quick Wins size headings, Auto-'Vandaag' default date, and Daily Main Goal tracking with streaks & stats.
 // @author       GreenlitNL
 // @match        https://app.todoist.com/*
@@ -844,7 +844,9 @@
                 --te-surface-hover: rgba(0, 0, 0, 0.04);
             }
 
-            [data-theme*="dark"], html.dark {
+            /* Todoist marks dark mode with class "theme_dark" on <html>.
+               (The older [data-theme] / html.dark selectors never matched its DOM.) */
+            html.theme_dark, [data-theme*="dark"], html.dark {
                 --te-card-bg: #232326;
                 --te-card-border: rgba(255, 255, 255, 0.12);
                 --te-card-border-hover: rgba(255, 255, 255, 0.22);
@@ -1406,22 +1408,32 @@
                 gap: 6px;
                 padding: 5px 12px;
                 border-radius: 6px;
-                border: none;
+                border: 1px solid transparent;
                 background: transparent;
                 color: var(--te-text-secondary);
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+                transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
                 user-select: none;
             }
             .todoist-enhanced-view-tab:hover {
                 color: var(--te-text-primary);
             }
             .todoist-enhanced-view-tab.is-active {
-                background: var(--te-card-bg);
-                color: var(--te-text-primary);
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+                /* Use the constant accent color for the active tab so it is clearly
+                   visible in BOTH light and dark themes without depending on any
+                   theme-detection selector (which can fail to match Todoist's DOM). */
+                background: var(--te-accent);
+                color: #ffffff;
+                border: 1px solid var(--te-accent);
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+            }
+            .todoist-enhanced-view-tab.is-active:hover {
+                color: #ffffff;
+            }
+            .todoist-enhanced-view-tab.is-active svg {
+                color: #ffffff;
             }
             .todoist-enhanced-view-tab svg {
                 flex-shrink: 0;
@@ -2970,7 +2982,7 @@
         // Initial trigger
         scheduleUpdates();
 
-        log('Todoist: Enhanced v2.7.0 loaded.');
+        log('Todoist: Enhanced v2.7.1 loaded.');
     }
 
     if (document.readyState === 'loading') {
