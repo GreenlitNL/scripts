@@ -12,8 +12,8 @@
 // @match        *://10.*:32400/web/*
 // @match        *://172.16.*:32400/web/*
 // @match        *://*.plex.direct:32400/web/*
-// @updateURL    https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player.user.js
-// @downloadURL  https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player.user.js
+// @updateURL    https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player/plex-enhanced-player.user.js
+// @downloadURL  https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player/plex-enhanced-player.user.js
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==

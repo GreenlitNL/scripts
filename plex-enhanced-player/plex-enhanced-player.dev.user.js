@@ -12,7 +12,7 @@
 // @match        *://10.*:32400/web/*
 // @match        *://172.16.*:32400/web/*
 // @match        *://*.plex.direct:32400/web/*
-// @require      file:///Users/sidbansidhar/Documents/Scripts/plex-enhanced-player.user.js
+// @require      file:///Users/sidbansidhar/Documents/Scripts/plex-enhanced-player/plex-enhanced-player.user.js
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==

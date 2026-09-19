@@ -8,8 +8,8 @@ Personal collection of custom Tampermonkey userscripts for web enhancements and 
 
 | Script | Target | Direct Install | Dev Loader |
 | :--- | :--- | :--- | :--- |
-| **Plex: Enhanced Player** | Plex Web (`app.plex.tv`, local servers) | [Install Script ➔](https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player.user.js) | [`plex-enhanced-player.dev.user.js`](./plex-enhanced-player.dev.user.js) |
-| **Todoist: Enhanced** | Todoist Web (`app.todoist.com`) | [Install Script ➔](https://raw.githubusercontent.com/GreenlitNL/scripts/main/todoist-enhanced.user.js) | [`todoist-enhanced.dev.user.js`](./todoist-enhanced.dev.user.js) |
+| **Plex: Enhanced Player** | Plex Web (`app.plex.tv`, local servers) | [Install Script ➔](https://raw.githubusercontent.com/GreenlitNL/scripts/main/plex-enhanced-player/plex-enhanced-player.user.js) | [`plex-enhanced-player.dev.user.js`](./plex-enhanced-player/plex-enhanced-player.dev.user.js) |
+| **Todoist: Enhanced** | Todoist Web (`app.todoist.com`) | [Install Script ➔](https://raw.githubusercontent.com/GreenlitNL/scripts/main/todoist-enhanced/todoist-enhanced.user.js) | [`todoist-enhanced.dev.user.js`](./todoist-enhanced/todoist-enhanced.dev.user.js) |
 
 *Clicking an **Install Script** link above will automatically open Tampermonkey's installation dialog in Chrome.*
 
@@ -32,12 +32,18 @@ Adds missing player controls, custom aspect-ratio cropping, 5-second skips, and 
 ---
 
 ### 2. Todoist: Enhanced
-Combines day-planning section classification, quick-wins sizing, and automatic default due dates into a single high-efficiency engine.
+All-in-one productivity enhancements combining modular day-planning section classification, quick-wins sizing, automatic default due dates, and a complete Daily Main Goal focus system.
 
-* **Day Planning Headings:** Groups sections into **Ochtend**, **Middag**, **Avond**, **Hele dag**, and **Wachten** based on task times and keywords on planning filters (`taken`, `habits`, `routines`).
-* **Quick Wins Size Headings:** Dynamically labels sections according to task size and priority tags (**XS**, **S**, **M**, **L**, **XL**, **Wachten**) on the Quick Wins page.
-* **Auto-Default "Vandaag":** Automatically sets the due date to "Vandaag" when opening the task editor on planning and filter views if no date is set.
-* **Unified Engine:** Single debounced DOM observer and SPA router that prevents performance overhead.
+* **Module 1 — Day Planning Headings:** Groups sections into **Ochtend**, **Middag**, **Avond**, **Hele dag**, and **Wachten** based on task times and keywords on planning filters (`taken`, `habits`, `routines`).
+* **Module 2 — Quick Wins Size Headings:** Dynamically labels sections according to task size and priority tags (**XS**, **S**, **M**, **L**, **XL**, **Wachten**) on the Quick Wins page.
+* **Module 3 — Auto-Default "Vandaag":** Automatically sets the due date to "Vandaag" when opening the task editor on planning and filter views if no date is set.
+* **Module 4 — Daily Main Goal & Streaks:**
+  * **Hero Focus Card:** Prominently pinned at the top of the Today view (`/app/today`) and day-planning views. Displays today's primary focus, completion checkbox, and active streak.
+  * **One-Click Task Selection:** Hover over any task in Todoist and click the Lucide Target icon to set it as today's single main goal (enforces the Rule of One).
+  * **Task Highlighting:** The active daily goal task is styled with an accent border and "Hoofddoel" badge across any view.
+  * **Auto-Completion & Tracking:** Checking off the task in Todoist automatically marks the daily goal as complete, increments your streak, and logs history in persistent storage.
+  * **History & Streaks Modal (<kbd>Shift</kbd> + <kbd>G</kbd>):** Displays current streak, best streak, 30-day activity square grid, chronological history, and JSON export.
+* **Unified Engine:** Single debounced DOM observer and SPA router that prevents performance overhead with zero external dependencies and native Lucide SVG iconography.
 
 ---
 
@@ -49,8 +55,8 @@ Test local changes instantly in your browser without committing or waiting for G
 2. Enable **Developer mode** (top-right toggle).
 3. Click **Details** on **Tampermonkey** and switch ON **"Allow access to file URLs"**.
 4. In Tampermonkey dashboard, create a new script and paste the contents of the matching `.dev.user.js` file:
-   * [`plex-enhanced-player.dev.user.js`](./plex-enhanced-player.dev.user.js)
-   * [`todoist-enhanced.dev.user.js`](./todoist-enhanced.dev.user.js)
+   * [`plex-enhanced-player.dev.user.js`](./plex-enhanced-player/plex-enhanced-player.dev.user.js)
+   * [`todoist-enhanced.dev.user.js`](./todoist-enhanced/todoist-enhanced.dev.user.js)
 5. Save. Any edits you make to the `.user.js` file in your editor will now take effect immediately upon browser refresh (`Cmd + R`).
 
 ---
