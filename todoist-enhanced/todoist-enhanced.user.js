@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Todoist: Enhanced (Day Planning, Quick Wins & Daily Main Goal)
 // @namespace    https://github.com/GreenlitNL/scripts
-// @version      2.6.0
+// @version      2.6.1
 // @description  All-in-one productivity enhancements for Todoist: Day Planning section headings, Quick Wins size headings, Auto-'Vandaag' default date, and Daily Main Goal tracking with streaks & stats.
 // @author       GreenlitNL
 // @match        https://app.todoist.com/*
@@ -2129,6 +2129,40 @@
         viewHeaderActions.insertBefore(btn, viewHeaderActions.firstChild);
     }
 
+    // Opens the native Todoist task detail view/overlay for a given task id.
+    // Prefers clicking the actual task row (identical to a normal click and keeps
+    // Todoist's own overlay behavior); falls back to SPA navigation to the task URL
+    // when the task is not present in the current DOM (e.g. scrolled out or filtered).
+    function openTaskDetail(taskId) {
+        if (!taskId) return;
+
+        const taskItem = document.querySelector(
+            `li.task_list_item[data-item-id="${taskId}"], [data-item-id="${taskId}"]`
+        );
+        if (taskItem && isVisible(taskItem)) {
+            const clickable = taskItem.querySelector(
+                '.task_content, [class*="task_content"], .task_item__content, [data-testid="task-content"]'
+            ) || taskItem;
+            clickable.click();
+            return;
+        }
+
+        // Fallback: navigate the SPA router to the task URL.
+        const url = `/app/task/${taskId}`;
+        try {
+            history.pushState({}, '', url);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+        } catch (e) {
+            window.location.assign(url);
+        }
+    }
+
+    // True when the current route is a Todoist task detail view (opened as an
+    // overlay on top of the current page, e.g. /app/today/task/<id> or /app/task/<id>).
+    function isTaskDetailRoute() {
+        return /\/task\/[^/]+$/.test(location.pathname);
+    }
+
     // Renders the Hero Focus Card inside view_content, matching the exact 800px task-column width
     function renderHeroFocusCard() {
         const main = document.querySelector('main');
@@ -2137,6 +2171,11 @@
         const existingCard = document.getElementById('todoist-enhanced-hero-card');
 
         if (!isDailyGoalPage()) {
+            // When a task detail view opens on top of a daily-goal page, the route
+            // changes to a task route but the daily-goal view stays behind it
+            // (blurred). Keep the existing hero card in place so it doesn't flicker
+            // out and back in. Only remove it when we've actually left the page.
+            if (isTaskDetailRoute() && existingCard) return;
             if (existingCard) existingCard.remove();
             return;
         }
@@ -2153,12 +2192,33 @@
         if (activeGoal && activeGoal.taskId) {
             const taskItem = document.querySelector(`li.task_list_item[data-item-id="${activeGoal.taskId}"]`);
             if (taskItem) {
+                let changed = false;
+
+                // Keep the stored priority in sync with the live task.
                 const detected = getTaskItemPriority(taskItem);
                 if (detected && detected !== priority) {
                     priority = detected;
                     activeGoal.priority = detected;
-                    saveDailyGoalState(activeGoal);
+                    changed = true;
                 }
+
+                // Keep the stored task name in sync in case it was renamed in Todoist.
+                const liveName = getTaskItemTitle(taskItem);
+                if (liveName && liveName !== activeGoal.taskName) {
+                    activeGoal.taskName = liveName;
+                    changed = true;
+
+                    // Mirror the rename into today's history entry so the history
+                    // list and calendar stay consistent.
+                    const todayStr = getLocalDateString();
+                    const history = loadGoalHistory();
+                    if (history[todayStr] && history[todayStr].taskId === activeGoal.taskId) {
+                        history[todayStr].taskName = liveName;
+                        saveGoalHistory(history);
+                    }
+                }
+
+                if (changed) saveDailyGoalState(activeGoal);
             }
         }
         if (!priority) priority = 4;
@@ -2302,8 +2362,59 @@
     function renderTaskGoalButtons() {
         const taskItems = document.querySelectorAll('li.task_list_item, [data-testid="task-list-item"]');
         if (!taskItems.length) return;
-        const activeGoal = loadDailyGoalState();
+        let activeGoal = loadDailyGoalState();
+        // Reconcile the stored task id with the DOM in case Todoist swapped a
+        // freshly-created task's placeholder id for its real server id after sync.
+        activeGoal = reconcileGoalTaskId(activeGoal, taskItems) || activeGoal;
         taskItems.forEach(item => ensureTaskGoalButton(item, activeGoal));
+    }
+
+    // When a task is set as goal immediately after creation, Todoist stores a
+    // temporary placeholder id in the DOM which is later replaced by the real
+    // server id once sync completes. That leaves our stored goal.taskId stale, so
+    // the task no longer appears highlighted even though it is still the goal.
+    // This heals the stored id by matching on the (unique) task title.
+    function reconcileGoalTaskId(activeGoal, taskItems) {
+        if (!activeGoal || !activeGoal.taskId || !activeGoal.taskName) return activeGoal;
+
+        // If a row with the stored id already exists in the DOM, nothing to fix.
+        for (const item of taskItems) {
+            const id = item.getAttribute('data-item-id') || item.dataset.itemId;
+            if (id && id === activeGoal.taskId) return activeGoal;
+        }
+
+        // No id match. Look for a unique title match to heal the id.
+        const goalTitle = normalize(activeGoal.taskName);
+        if (!goalTitle) return activeGoal;
+
+        let matchId = null;
+        let matchCount = 0;
+        for (const item of taskItems) {
+            const id = item.getAttribute('data-item-id') || item.dataset.itemId;
+            if (!id) continue;
+            if (normalize(getTaskItemTitle(item)) === goalTitle) {
+                matchCount++;
+                matchId = id;
+            }
+        }
+
+        // Only heal on an unambiguous single match.
+        if (matchCount !== 1 || !matchId || matchId === activeGoal.taskId) return activeGoal;
+
+        const oldId = activeGoal.taskId;
+        activeGoal.taskId = matchId;
+        saveDailyGoalState(activeGoal);
+
+        // Keep today's history entry id in sync as well.
+        const todayStr = getLocalDateString();
+        const history = loadGoalHistory();
+        if (history[todayStr] && history[todayStr].taskId === oldId) {
+            history[todayStr].taskId = matchId;
+            saveGoalHistory(history);
+        }
+
+        log(`Reconciled goal task id: ${oldId} -> ${matchId}`);
+        return activeGoal;
     }
 
     // Listens for native task completions to update Daily Goal state
@@ -2528,7 +2639,13 @@
             if (e.target.closest('.todoist-enhanced-hero-card')) {
                 e.preventDefault();
                 e.stopPropagation();
-                openHistoryModal();
+                const activeGoal = loadDailyGoalState();
+                if (activeGoal && activeGoal.taskId) {
+                    openTaskDetail(activeGoal.taskId);
+                } else {
+                    // No goal chosen yet: fall back to the history & streaks modal.
+                    openHistoryModal();
+                }
                 return;
             }
 
@@ -2697,7 +2814,7 @@
         // Initial trigger
         scheduleUpdates();
 
-        log('Todoist: Enhanced v2.6.0 loaded.');
+        log('Todoist: Enhanced v2.6.1 loaded.');
     }
 
     if (document.readyState === 'loading') {
