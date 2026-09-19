@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Todoist: Enhanced (Day Planning, Quick Wins & Daily Main Goal)
 // @namespace    https://github.com/GreenlitNL/scripts
-// @version      2.4.3
+// @version      2.6.0
 // @description  All-in-one productivity enhancements for Todoist: Day Planning section headings, Quick Wins size headings, Auto-'Vandaag' default date, and Daily Main Goal tracking with streaks & stats.
 // @author       GreenlitNL
 // @match        https://app.todoist.com/*
@@ -61,6 +61,7 @@
 
     const STORAGE_KEY_DAILY_GOAL = 'todoist_enhanced_daily_goal';
     const STORAGE_KEY_GOAL_HISTORY = 'todoist_enhanced_goal_history';
+    const STORAGE_KEY_MODAL_VIEW = 'todoist_enhanced_modal_view';
 
     const DEBUG = false;
     function log(...args) {
@@ -69,6 +70,15 @@
 
     function normalize(text) {
         return (text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    }
+
+    function escapeHtml(str) {
+        return (str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 
     function isVisible(el) {
@@ -145,6 +155,14 @@
                 <path d="M3 3v5h5"></path>
             </svg>
         `,
+        trash2: (size = 18, cls = '') => `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2 ${cls}">
+                <path d="M3 6h18"></path>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" x2="10" y1="11" y2="17"></line>
+                <line x1="14" x2="14" y1="11" y2="17"></line>
+            </svg>
+        `,
         sparkles: (size = 18, cls = '') => `
             <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles ${cls}">
                 <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
@@ -173,6 +191,24 @@
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" x2="12" y1="15" y2="3"></line>
+            </svg>
+        `,
+        chevronLeft: (size = 18, cls = '') => `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left ${cls}">
+                <path d="m15 18-6-6 6-6"></path>
+            </svg>
+        `,
+        chevronRight: (size = 18, cls = '') => `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right ${cls}">
+                <path d="m9 18 6-6-6-6"></path>
+            </svg>
+        `,
+        layoutGrid: (size = 18, cls = '') => `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layout-grid ${cls}">
+                <rect width="7" height="7" x="3" y="3" rx="1"></rect>
+                <rect width="7" height="7" x="14" y="3" rx="1"></rect>
+                <rect width="7" height="7" x="14" y="14" rx="1"></rect>
+                <rect width="7" height="7" x="3" y="14" rx="1"></rect>
             </svg>
         `
     };
@@ -493,6 +529,57 @@
             history[todayStr].completedAt = null;
         }
         saveGoalHistory(history);
+
+        scheduleUpdates();
+    }
+
+    // Marks a specific historical day as NOT completed. Used from the history
+    // overview to correct a day that was mistakenly recorded as done.
+    function resetGoalDay(dateStr) {
+        if (!dateStr) return;
+        const todayStr = getLocalDateString();
+
+        const history = loadGoalHistory();
+        if (history[dateStr]) {
+            history[dateStr].completed = false;
+            history[dateStr].completedAt = null;
+        }
+        saveGoalHistory(history);
+
+        // If resetting today, also flip the active goal state so the hero card,
+        // banner and checkbox reflect the change immediately.
+        if (dateStr === todayStr) {
+            const state = loadDailyGoalState();
+            if (state && state.completed) {
+                state.completed = false;
+                state.completedAt = null;
+                saveDailyGoalState(state);
+            }
+        }
+
+        scheduleUpdates();
+    }
+
+    // Removes a day entirely from the goal history. Also resets today's active
+    // goal state when the deleted day is today, so the page UI stays consistent.
+    function deleteGoalDay(dateStr) {
+        if (!dateStr) return;
+        const todayStr = getLocalDateString();
+
+        const history = loadGoalHistory();
+        if (Object.prototype.hasOwnProperty.call(history, dateStr)) {
+            delete history[dateStr];
+        }
+        saveGoalHistory(history);
+
+        // If deleting today's entry, clear the active goal completely so the hero
+        // card and banner no longer show a completed/active goal for today.
+        if (dateStr === todayStr) {
+            const state = loadDailyGoalState();
+            if (state && state.date === todayStr) {
+                saveDailyGoalState(null);
+            }
+        }
 
         scheduleUpdates();
     }
@@ -909,8 +996,8 @@
                 border: 1px solid var(--te-card-border);
                 border-radius: 12px;
                 box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
-                width: 580px;
-                max-width: 92vw;
+                width: 640px;
+                max-width: 94vw;
                 max-height: 85vh;
                 display: flex;
                 flex-direction: column;
@@ -1061,6 +1148,40 @@
             .todoist-enhanced-history-status.is-missed {
                 color: var(--te-text-secondary);
             }
+            .todoist-enhanced-history-right {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                flex-shrink: 0;
+            }
+            .todoist-enhanced-history-action-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 24px;
+                height: 24px;
+                padding: 0;
+                border: none;
+                border-radius: 5px;
+                background: transparent;
+                color: var(--te-text-secondary);
+                cursor: pointer;
+                transition: background-color 0.15s ease, color 0.15s ease;
+            }
+            .todoist-enhanced-history-action-btn:hover {
+                background: var(--te-surface-hover);
+                color: var(--te-text-primary);
+            }
+            .todoist-enhanced-history-action-btn.reset-day-btn:hover {
+                color: var(--te-accent);
+            }
+            .todoist-enhanced-history-action-btn.delete-day-btn:hover {
+                color: var(--te-accent);
+            }
+            .todoist-enhanced-history-action-btn:focus-visible {
+                outline: 2px solid var(--te-accent);
+                outline-offset: 1px;
+            }
 
             .todoist-enhanced-modal-footer {
                 padding: 12px 20px;
@@ -1093,6 +1214,190 @@
             }
             .todoist-enhanced-btn.btn-primary:hover {
                 background: var(--te-accent-hover);
+            }
+            .todoist-enhanced-btn.btn-sm {
+                padding: 4px 10px;
+                font-size: 12px;
+                height: 28px;
+            }
+            .todoist-enhanced-btn.btn-icon-sm {
+                padding: 0;
+                width: 28px;
+                height: 28px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            /* Live View Switcher (Segmented Control) */
+            .todoist-enhanced-view-switcher {
+                display: inline-flex;
+                align-items: center;
+                background: var(--te-surface-hover);
+                border: 1px solid var(--te-card-border);
+                border-radius: 8px;
+                padding: 3px;
+                gap: 3px;
+                align-self: flex-end;
+            }
+            .todoist-enhanced-view-tab {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 5px 12px;
+                border-radius: 6px;
+                border: none;
+                background: transparent;
+                color: var(--te-text-secondary);
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+                user-select: none;
+            }
+            .todoist-enhanced-view-tab:hover {
+                color: var(--te-text-primary);
+            }
+            .todoist-enhanced-view-tab.is-active {
+                background: var(--te-card-bg);
+                color: var(--te-text-primary);
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            }
+            .todoist-enhanced-view-tab svg {
+                flex-shrink: 0;
+            }
+
+            /* View Panels */
+            .todoist-enhanced-view-panel {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+            .todoist-enhanced-view-panel.is-hidden {
+                display: none !important;
+            }
+
+            /* Calendar Component */
+            .todoist-enhanced-cal-wrapper {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            .todoist-enhanced-cal-nav-bar {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 2px 0;
+            }
+            .todoist-enhanced-cal-month-title {
+                font-size: 15px;
+                font-weight: 700;
+                color: var(--te-text-primary);
+                letter-spacing: -0.2px;
+            }
+            .todoist-enhanced-cal-nav-actions {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .todoist-enhanced-cal-grid {
+                display: grid;
+                grid-template-columns: repeat(7, 1fr);
+                gap: 5px;
+            }
+            .todoist-enhanced-cal-day-header {
+                font-size: 11px;
+                font-weight: 600;
+                text-align: center;
+                color: var(--te-text-secondary);
+                padding: 2px 0 6px 0;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .todoist-enhanced-cal-cell {
+                min-height: 62px;
+                border: 1px solid var(--te-card-border);
+                border-radius: 6px;
+                padding: 4px 5px;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                background: var(--te-card-bg);
+                transition: background-color 0.15s ease, border-color 0.15s ease;
+                cursor: default;
+                position: relative;
+                box-sizing: border-box;
+            }
+            .todoist-enhanced-cal-cell:hover {
+                background: var(--te-surface-hover);
+            }
+            .todoist-enhanced-cal-cell.is-other-month {
+                opacity: 0.35;
+            }
+            .todoist-enhanced-cal-cell.is-today {
+                border-color: var(--te-accent);
+                background: rgba(220, 76, 62, 0.04);
+            }
+            .todoist-enhanced-cal-cell-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                line-height: 1;
+            }
+            .todoist-enhanced-cal-day-num {
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--te-text-secondary);
+            }
+            .todoist-enhanced-cal-cell.is-today .todoist-enhanced-cal-day-num {
+                background: var(--te-accent);
+                color: #ffffff;
+                border-radius: 9999px;
+                width: 17px;
+                height: 17px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 10px;
+            }
+            .todoist-enhanced-cal-task-pill {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                padding: 3px 5px;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: 500;
+                line-height: 1.2;
+                background: var(--te-surface-hover);
+                color: var(--te-text-primary);
+                border-left: 2.5px solid transparent;
+                overflow: hidden;
+                box-sizing: border-box;
+                width: 100%;
+            }
+            .todoist-enhanced-cal-task-pill.is-completed {
+                background: var(--te-success-subtle);
+                color: var(--te-success);
+            }
+            .todoist-enhanced-cal-task-pill.is-today-active {
+                background: var(--te-accent-subtle);
+                color: var(--te-accent);
+            }
+            .todoist-enhanced-cal-task-pill.priority-1 { border-left-color: var(--product-library-priorities-p1-primary-idle-fill, #d1453b); }
+            .todoist-enhanced-cal-task-pill.priority-2 { border-left-color: var(--product-library-priorities-p2-primary-idle-fill, #eb8909); }
+            .todoist-enhanced-cal-task-pill.priority-3 { border-left-color: var(--product-library-priorities-p3-primary-idle-fill, #246fe0); }
+            .todoist-enhanced-cal-task-pill.priority-4 { border-left-color: var(--product-library-priorities-p4-primary-idle-fill, #999999); }
+            .todoist-enhanced-cal-task-pill svg {
+                flex-shrink: 0;
+            }
+            .todoist-enhanced-cal-task-title {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                flex-grow: 1;
+                min-width: 0;
             }
         `;
         document.head.appendChild(style);
@@ -1436,19 +1741,199 @@
         return DAILY_GOAL_BANNER_PATHS.some(path => location.pathname.startsWith(path));
     }
 
+    const DUTCH_MONTH_NAMES = [
+        'Januari', 'Februari', 'Maart', 'April', 'Mei', 'Juni',
+        'Juli', 'Augustus', 'September', 'Oktober', 'November', 'December'
+    ];
+
+    function formatCompletionTime(completedAt) {
+        if (!completedAt) return '';
+        try {
+            const d = new Date(completedAt);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function renderCalendarCell(dateStr, dayNum, isOtherMonth, entry, activeGoal, todayStr) {
+        const isToday = dateStr === todayStr;
+        let taskName = '';
+        let isCompleted = false;
+        let isTodayActive = false;
+        let priority = 4;
+        let tooltip = '';
+
+        if (isToday && activeGoal) {
+            taskName = activeGoal.taskName || 'Hoofddoel';
+            priority = activeGoal.priority || 4;
+            if (activeGoal.completed) {
+                isCompleted = true;
+                const time = formatCompletionTime(activeGoal.completedAt);
+                tooltip = `Vandaag: ✓ ${taskName} (Voltooid${time ? ` om ${time}` : ''})`;
+            } else {
+                isTodayActive = true;
+                tooltip = `Vandaag: ${taskName} (Bezig)`;
+            }
+        } else if (entry) {
+            taskName = entry.taskName || 'Hoofddoel';
+            priority = entry.priority || 4;
+            if (entry.completed) {
+                isCompleted = true;
+                const time = formatCompletionTime(entry.completedAt);
+                tooltip = `${dateStr}: ✓ ${taskName} (Voltooid${time ? ` om ${time}` : ''})`;
+            } else {
+                tooltip = `${dateStr}: ${taskName} (Niet voltooid)`;
+            }
+        }
+
+        if (![1, 2, 3, 4].includes(priority)) priority = 4;
+
+        let taskHtml = '';
+        if (taskName) {
+            const statusIcon = isCompleted ? LUCIDE_ICONS.check(11) : LUCIDE_ICONS.circle(11);
+            const statusClass = isCompleted ? 'is-completed' : (isTodayActive ? 'is-today-active' : '');
+            taskHtml = `
+                <div class="todoist-enhanced-cal-task-pill priority-${priority} ${statusClass}" title="${escapeHtml(tooltip)}">
+                    ${statusIcon}
+                    <span class="todoist-enhanced-cal-task-title">${escapeHtml(taskName)}</span>
+                </div>
+            `;
+        }
+
+        const cellClasses = [
+            'todoist-enhanced-cal-cell',
+            isOtherMonth ? 'is-other-month' : '',
+            isToday ? 'is-today' : ''
+        ].filter(Boolean).join(' ');
+
+        return `
+            <div class="${cellClasses}" data-date="${dateStr}">
+                <div class="todoist-enhanced-cal-cell-header">
+                    <span class="todoist-enhanced-cal-day-num">${dayNum}</span>
+                </div>
+                ${taskHtml}
+            </div>
+        `;
+    }
+
+    function buildGoalCalendarMarkup(year, month, history, activeGoal) {
+        const todayStr = getLocalDateString();
+        const monthTitle = `${DUTCH_MONTH_NAMES[month]} ${year}`;
+
+        const firstDayOfMonth = new Date(year, month, 1);
+        const startingDayOfWeek = (firstDayOfMonth.getDay() + 6) % 7;
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+        let cellsHtml = '';
+
+        // 1. Trailing days from previous month
+        for (let i = 0; i < startingDayOfWeek; i++) {
+            const dayNum = daysInPrevMonth - startingDayOfWeek + 1 + i;
+            const prevD = new Date(year, month - 1, dayNum);
+            const dStr = getLocalDateString(prevD);
+            const entry = history[dStr];
+            cellsHtml += renderCalendarCell(dStr, dayNum, true, entry, activeGoal, todayStr);
+        }
+
+        // 2. Days in current month
+        for (let day = 1; day <= daysInMonth; day++) {
+            const curD = new Date(year, month, day);
+            const dStr = getLocalDateString(curD);
+            const entry = history[dStr];
+            cellsHtml += renderCalendarCell(dStr, day, false, entry, activeGoal, todayStr);
+        }
+
+        // 3. Leading days of next month to complete the grid
+        const totalCellsSoFar = startingDayOfWeek + daysInMonth;
+        const totalGridCells = totalCellsSoFar % 7 === 0 ? totalCellsSoFar : totalCellsSoFar + (7 - (totalCellsSoFar % 7));
+        const trailingDaysNeeded = totalGridCells - totalCellsSoFar;
+        for (let day = 1; day <= trailingDaysNeeded; day++) {
+            const nextD = new Date(year, month + 1, day);
+            const dStr = getLocalDateString(nextD);
+            const entry = history[dStr];
+            cellsHtml += renderCalendarCell(dStr, day, true, entry, activeGoal, todayStr);
+        }
+
+        const weekdayHeaders = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo']
+            .map(d => `<div class="todoist-enhanced-cal-day-header">${d}</div>`)
+            .join('');
+
+        return `
+            <div class="todoist-enhanced-cal-wrapper">
+                <div class="todoist-enhanced-cal-nav-bar">
+                    <div class="todoist-enhanced-cal-month-title">${monthTitle}</div>
+                    <div class="todoist-enhanced-cal-nav-actions">
+                        <button class="todoist-enhanced-btn btn-sm btn-icon-sm cal-prev-btn" type="button" title="Vorige maand" aria-label="Vorige maand">
+                            ${LUCIDE_ICONS.chevronLeft(16)}
+                        </button>
+                        <button class="todoist-enhanced-btn btn-sm cal-today-btn" type="button" title="Huidige maand">
+                            Vandaag
+                        </button>
+                        <button class="todoist-enhanced-btn btn-sm btn-icon-sm cal-next-btn" type="button" title="Volgende maand" aria-label="Volgende maand">
+                            ${LUCIDE_ICONS.chevronRight(16)}
+                        </button>
+                    </div>
+                </div>
+                <div class="todoist-enhanced-cal-grid">
+                    ${weekdayHeaders}
+                    ${cellsHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    function updateCalendarView(modalOverlay, year, month) {
+        const history = loadGoalHistory();
+        const activeGoal = loadDailyGoalState();
+        const panelCal = modalOverlay.querySelector('#todoist-enhanced-panel-calendar');
+        if (!panelCal) return;
+
+        modalOverlay.dataset.calYear = String(year);
+        modalOverlay.dataset.calMonth = String(month);
+        panelCal.innerHTML = buildGoalCalendarMarkup(year, month, history, activeGoal);
+    }
+
     // Opens the History & Streaks Modal
     function openHistoryModal() {
         if (document.getElementById('todoist-enhanced-history-modal')) return;
 
         ensureStyles();
+        const activeView = getStorageItem(STORAGE_KEY_MODAL_VIEW, 'grid');
+
+        const now = new Date();
+        const curYear = now.getFullYear();
+        const curMonth = now.getMonth();
+
+        const modalOverlay = document.createElement('div');
+        modalOverlay.id = 'todoist-enhanced-history-modal';
+        modalOverlay.className = 'todoist-enhanced-modal-overlay';
+        modalOverlay.dataset.activeView = activeView;
+        modalOverlay.dataset.calYear = String(curYear);
+        modalOverlay.dataset.calMonth = String(curMonth);
+
+        renderHistoryModalInner(modalOverlay);
+        document.body.appendChild(modalOverlay);
+    }
+
+    // Builds (or rebuilds) the inner markup of the history modal, preserving the
+    // currently selected view and navigated calendar month via the overlay's dataset.
+    function renderHistoryModalInner(modalOverlay) {
         const history = loadGoalHistory();
         const activeGoal = loadDailyGoalState();
         const streaks = calculateStreaks(history, activeGoal);
         const todayStr = getLocalDateString();
 
-        const modalOverlay = document.createElement('div');
-        modalOverlay.id = 'todoist-enhanced-history-modal';
-        modalOverlay.className = 'todoist-enhanced-modal-overlay';
+        const activeView = modalOverlay.dataset.activeView || 'grid';
+        let curYear = parseInt(modalOverlay.dataset.calYear, 10);
+        let curMonth = parseInt(modalOverlay.dataset.calMonth, 10);
+        if (isNaN(curYear) || isNaN(curMonth)) {
+            const now = new Date();
+            curYear = now.getFullYear();
+            curMonth = now.getMonth();
+        }
 
         // Build last 30 days grid
         const activitySquares = [];
@@ -1481,8 +1966,8 @@
             }
 
             activitySquares.push(`
-                <div class="todoist-enhanced-activity-box ${statusCls}${isToday ? ' is-today' : ''}" title="${titleAttr}">
-                    ${entry && entry.completed ? LUCIDE_ICONS.checkCircle2(12) : ''}
+                <div class="todoist-enhanced-activity-box ${statusCls}${isToday ? ' is-today' : ''}" title="${escapeHtml(titleAttr)}">
+                    ${(entry && entry.completed) || (isToday && activeGoal && activeGoal.completed) ? LUCIDE_ICONS.checkCircle2(12) : ''}
                 </div>
             `);
         }
@@ -1492,15 +1977,26 @@
         const historyRows = sortedDates.map(date => {
             const item = history[date];
             const isDone = item.completed;
+            const resetBtn = isDone ? `
+                        <button class="todoist-enhanced-history-action-btn reset-day-btn" data-reset-date="${escapeHtml(date)}" type="button" title="Markeer als niet voltooid" aria-label="Markeer als niet voltooid">
+                            ${LUCIDE_ICONS.rotateCcw(13)}
+                        </button>
+                    ` : '';
             return `
                 <div class="todoist-enhanced-history-item">
                     <div class="todoist-enhanced-history-left">
                         <span class="todoist-enhanced-history-date">${date}</span>
-                        <span class="todoist-enhanced-history-title">${item.taskName || 'Hoofddoel'}</span>
+                        <span class="todoist-enhanced-history-title">${escapeHtml(item.taskName || 'Hoofddoel')}</span>
                     </div>
-                    <div class="todoist-enhanced-history-status ${isDone ? 'is-completed' : 'is-missed'}">
-                        ${isDone ? LUCIDE_ICONS.checkCircle2(14) : LUCIDE_ICONS.circle(14)}
-                        <span>${isDone ? 'Voltooid' : 'Niet voltooid'}</span>
+                    <div class="todoist-enhanced-history-right">
+                        <div class="todoist-enhanced-history-status ${isDone ? 'is-completed' : 'is-missed'}">
+                            ${isDone ? LUCIDE_ICONS.checkCircle2(14) : LUCIDE_ICONS.circle(14)}
+                            <span>${isDone ? 'Voltooid' : 'Niet voltooid'}</span>
+                        </div>
+                        ${resetBtn}
+                        <button class="todoist-enhanced-history-action-btn delete-day-btn" data-delete-date="${escapeHtml(date)}" type="button" title="Verwijder dit item uit de geschiedenis" aria-label="Verwijder dit item uit de geschiedenis">
+                            ${LUCIDE_ICONS.trash2(13)}
+                        </button>
                     </div>
                 </div>
             `;
@@ -1549,18 +2045,35 @@
                         </div>
                     </div>
 
-                    <div>
-                        <div class="todoist-enhanced-section-title">Activiteit afgelopen 30 dagen</div>
-                        <div class="todoist-enhanced-activity-grid">
-                            ${activitySquares.join('')}
+                    <div class="todoist-enhanced-view-switcher" role="tablist" aria-label="Kies weergave">
+                        <button class="todoist-enhanced-view-tab ${activeView === 'grid' ? 'is-active' : ''}" data-view="grid" role="tab" aria-selected="${activeView === 'grid'}">
+                            ${LUCIDE_ICONS.layoutGrid(14)}
+                            <span>Raster</span>
+                        </button>
+                        <button class="todoist-enhanced-view-tab ${activeView === 'calendar' ? 'is-active' : ''}" data-view="calendar" role="tab" aria-selected="${activeView === 'calendar'}">
+                            ${LUCIDE_ICONS.calendar(14)}
+                            <span>Kalender</span>
+                        </button>
+                    </div>
+
+                    <div id="todoist-enhanced-panel-grid" class="todoist-enhanced-view-panel ${activeView === 'grid' ? '' : 'is-hidden'}">
+                        <div>
+                            <div class="todoist-enhanced-section-title">Activiteit afgelopen 30 dagen</div>
+                            <div class="todoist-enhanced-activity-grid">
+                                ${activitySquares.join('')}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="todoist-enhanced-section-title">Geschiedenis</div>
+                            <div class="todoist-enhanced-history-list">
+                                ${historyRows.length ? historyRows : '<div style="color:var(--te-text-secondary); font-size:13px; text-align:center; padding:16px;">Nog geen eerdere doelen vastgelegd.</div>'}
+                            </div>
                         </div>
                     </div>
 
-                    <div>
-                        <div class="todoist-enhanced-section-title">Geschiedenis</div>
-                        <div class="todoist-enhanced-history-list">
-                            ${historyRows.length ? historyRows : '<div style="color:var(--te-text-secondary); font-size:13px; text-align:center; padding:16px;">Nog geen eerdere doelen vastgelegd.</div>'}
-                        </div>
+                    <div id="todoist-enhanced-panel-calendar" class="todoist-enhanced-view-panel ${activeView === 'calendar' ? '' : 'is-hidden'}">
+                        ${buildGoalCalendarMarkup(curYear, curMonth, history, activeGoal)}
                     </div>
                 </div>
                 <div class="todoist-enhanced-modal-footer">
@@ -1574,8 +2087,12 @@
                 </div>
             </div>
         `;
+    }
 
-        document.body.appendChild(modalOverlay);
+    // Re-renders the open history modal in place (preserves view + calendar month).
+    function refreshHistoryModal() {
+        const modalOverlay = document.getElementById('todoist-enhanced-history-modal');
+        if (modalOverlay) renderHistoryModalInner(modalOverlay);
     }
 
     function closeHistoryModal() {
@@ -1831,6 +2348,95 @@
                 e.preventDefault();
                 e.stopPropagation();
                 closeHistoryModal();
+                return;
+            }
+
+            // 2b. View switcher tab click
+            const viewTab = e.target.closest('.todoist-enhanced-view-tab');
+            if (viewTab) {
+                e.preventDefault();
+                e.stopPropagation();
+                const targetView = viewTab.dataset.view;
+                if (!targetView) return;
+
+                const modal = viewTab.closest('#todoist-enhanced-history-modal');
+                if (!modal) return;
+
+                setStorageItem(STORAGE_KEY_MODAL_VIEW, targetView);
+                modal.dataset.activeView = targetView;
+
+                modal.querySelectorAll('.todoist-enhanced-view-tab').forEach(tab => {
+                    const isActive = tab.dataset.view === targetView;
+                    tab.classList.toggle('is-active', isActive);
+                    tab.setAttribute('aria-selected', String(isActive));
+                });
+
+                const panelGrid = modal.querySelector('#todoist-enhanced-panel-grid');
+                const panelCal = modal.querySelector('#todoist-enhanced-panel-calendar');
+                if (panelGrid) panelGrid.classList.toggle('is-hidden', targetView !== 'grid');
+                if (panelCal) panelCal.classList.toggle('is-hidden', targetView !== 'calendar');
+                return;
+            }
+
+            // 2c. Calendar month navigation
+            const calNavBtn = e.target.closest('.cal-prev-btn, .cal-next-btn, .cal-today-btn');
+            if (calNavBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const modal = calNavBtn.closest('#todoist-enhanced-history-modal');
+                if (!modal) return;
+
+                let year = parseInt(modal.dataset.calYear, 10);
+                let month = parseInt(modal.dataset.calMonth, 10);
+                if (isNaN(year) || isNaN(month)) {
+                    const now = new Date();
+                    year = now.getFullYear();
+                    month = now.getMonth();
+                }
+
+                if (calNavBtn.classList.contains('cal-prev-btn')) {
+                    month--;
+                    if (month < 0) {
+                        month = 11;
+                        year--;
+                    }
+                } else if (calNavBtn.classList.contains('cal-next-btn')) {
+                    month++;
+                    if (month > 11) {
+                        month = 0;
+                        year++;
+                    }
+                } else if (calNavBtn.classList.contains('cal-today-btn')) {
+                    const now = new Date();
+                    year = now.getFullYear();
+                    month = now.getMonth();
+                }
+
+                updateCalendarView(modal, year, month);
+                return;
+            }
+
+            // 2d. Reset a day from the history overview
+            const resetDayBtn = e.target.closest('.reset-day-btn');
+            if (resetDayBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const dateStr = resetDayBtn.dataset.resetDate;
+                if (!dateStr) return;
+                resetGoalDay(dateStr);
+                refreshHistoryModal();
+                return;
+            }
+
+            // 2e. Delete a day entirely from the history overview
+            const deleteDayBtn = e.target.closest('.delete-day-btn');
+            if (deleteDayBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const dateStr = deleteDayBtn.dataset.deleteDate;
+                if (!dateStr) return;
+                deleteGoalDay(dateStr);
+                refreshHistoryModal();
                 return;
             }
 
@@ -2091,7 +2697,7 @@
         // Initial trigger
         scheduleUpdates();
 
-        log('Todoist: Enhanced v2.4.0 loaded.');
+        log('Todoist: Enhanced v2.6.0 loaded.');
     }
 
     if (document.readyState === 'loading') {
