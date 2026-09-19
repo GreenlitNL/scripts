@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Todoist: Enhanced (Day Planning, Quick Wins & Daily Main Goal)
 // @namespace    https://github.com/GreenlitNL/scripts
-// @version      2.6.1
+// @version      2.7.0
 // @description  All-in-one productivity enhancements for Todoist: Day Planning section headings, Quick Wins size headings, Auto-'Vandaag' default date, and Daily Main Goal tracking with streaks & stats.
 // @author       GreenlitNL
 // @match        https://app.todoist.com/*
@@ -430,13 +430,12 @@
         const existingState = loadDailyGoalState();
         saveDailyGoalState(null);
 
-        // Only delete today from history if it was NOT yet completed
-        // This guarantees a user's completed streak for today is NEVER lost when clearing/switching
-        if (!existingState || !existingState.completed) {
-            const history = loadGoalHistory();
-            delete history[todayStr];
-            saveGoalHistory(history);
-        }
+        // Clearing today's goal removes it from history entirely, including a
+        // completed one. If you change your mind and drop the goal, it should not
+        // keep counting toward your streak.
+        const history = loadGoalHistory();
+        delete history[todayStr];
+        saveGoalHistory(history);
 
         scheduleUpdates();
         const targetId = taskId || existingState?.taskId;
@@ -463,13 +462,17 @@
         }
         if (!finalPriority) finalPriority = 4;
 
+        // Switching to a different task means you changed your mind about today's
+        // goal, so the new goal starts fresh as not-completed. A previously
+        // completed goal you abandon should NOT keep counting toward the streak.
         const newState = {
             date: todayStr,
             taskId,
             taskName: taskName || 'Doel van vandaag',
             priority: finalPriority,
             completed: false,
-            completedAt: null
+            completedAt: null,
+            setAt: new Date().toISOString()
         };
         saveDailyGoalState(newState);
 
@@ -492,6 +495,11 @@
         const todayStr = getLocalDateString();
         const state = loadDailyGoalState();
         if (!state) return;
+        // Idempotent: the hero checkbox both clicks the native checkbox (which
+        // bubbles into the native-completion listener) and calls this directly,
+        // so this can fire twice. Bail if already completed to avoid resetting
+        // the completion timestamp and double-rendering.
+        if (state.completed) return;
 
         state.completed = true;
         state.completedAt = new Date().toISOString();
@@ -505,6 +513,7 @@
             history[todayStr] = {
                 taskId: state.taskId,
                 taskName: state.taskName,
+                priority: state.priority || 4,
                 completed: true,
                 completedAt: state.completedAt
             };
@@ -518,6 +527,9 @@
         const todayStr = getLocalDateString();
         const state = loadDailyGoalState();
         if (!state) return;
+        // Idempotent guard (see completeDailyGoal): the uncomplete path can also
+        // fire twice via the hero checkbox and the native Undo-toast listener.
+        if (!state.completed) return;
 
         state.completed = false;
         state.completedAt = null;
@@ -654,6 +666,157 @@
                 }
             }
         ]);
+    }
+
+    // Fast check for a SINGLE task via the REST endpoint. Returns:
+    //   'exists'  - HTTP 2xx (task is present, including completed)
+    //   'deleted' - HTTP 404 (Todoist authoritatively reports the task is gone)
+    //   'unknown' - no token, network error, or any other status
+    // This is a tiny request (unlike a full account sync), so it returns quickly.
+    async function checkTaskExists(taskId) {
+        if (!taskId) return 'unknown';
+        const token = getTodoistApiToken();
+        if (!token) return 'unknown';
+        try {
+            // Use the same-origin app.todoist.com host that the script's existing
+            // sync calls use successfully, avoiding any cross-origin/CORS issue.
+            const res = await fetch(`https://app.todoist.com/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+                method: 'GET',
+                headers: { 'authorization': `Bearer ${token}` }
+            });
+            if (res.status === 404) return 'deleted';
+            if (!res.ok) return 'unknown';
+
+            // A 200 does not necessarily mean "live": Todoist returns a recently
+            // deleted task with 200 and an is_deleted flag (which flips true a
+            // moment after the delete registers server-side).
+            let task = null;
+            try {
+                task = await res.json();
+            } catch (e) {
+                return 'exists'; // 200 but unparseable -> treat as still existing
+            }
+            if (task && (task.is_deleted === true || task.is_deleted === 1)) return 'deleted';
+            return 'exists';
+        } catch (err) {
+            log('goal-verify: task-check fetch error:', err);
+            return 'unknown';
+        }
+    }
+
+    // ---- Daily goal "does the task still exist?" watchdog -------------------
+    //
+    // Design (DOM-first, API as confirmation):
+    //  1. On a daily-goal page we watch whether the goal task's row is in the list.
+    //     Once we've SEEN the row, we know it's a real, live task on this page.
+    //  2. If a row we've seen then disappears (and the goal isn't completed), the
+    //     task was either deleted or moved off this list. We confirm with a single
+    //     fast API check; if the API says deleted, we clear the goal immediately.
+    //  3. We only ever clear on a definitive "deleted" (or a same-title check),
+    //     so a valid goal is never wiped by a transient hiccup.
+    //
+    // This is instant in the common case (row vanishes -> one quick check -> clear)
+    // and self-corrects on a background cadence for deletions done elsewhere.
+
+    let goalRowSeenForId = null;      // task id whose row we've confirmed in the DOM
+    let goalCheckInFlight = false;
+    let lastGoalCheckAt = 0;
+    let lastGoalCheckId = null;
+
+    // Confirms with Todoist whether the goal task is deleted, then clears if so.
+    // When triggered by the row vanishing we retry briefly, because Todoist's
+    // server can lag a second or two before it reports the deletion.
+    // `reason` is only for logging.
+    async function confirmAndClearIfDeleted(taskId, reason) {
+        if (!taskId || goalCheckInFlight) return;
+        goalCheckInFlight = true;
+        lastGoalCheckAt = Date.now();
+        lastGoalCheckId = taskId;
+        try {
+            const maxAttempts = reason === 'row-vanished' ? 8 : 1;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                // Bail if the goal changed or the row reappeared meanwhile.
+                const g = loadDailyGoalState();
+                if (!g || String(g.taskId) !== String(taskId) || g.completed) return;
+                if (document.querySelector(`[data-item-id="${taskId}"]`)) return;
+
+                const status = await checkTaskExists(taskId);
+                log('goal-watchdog check', reason, 'attempt', attempt, '->', status, 'for', taskId);
+
+                if (status === 'deleted') {
+                    // Safety: a live row with the same title means the task still
+                    // exists under a changed id; let reconcile handle it.
+                    const title = normalize(g.taskName);
+                    if (title) {
+                        const rows = document.querySelectorAll('li.task_list_item, [data-testid="task-list-item"]');
+                        let sameTitleLive = false;
+                        for (const row of rows) {
+                            if (normalize(getTaskItemTitle(row)) === title) { sameTitleLive = true; break; }
+                        }
+                        if (sameTitleLive) return;
+                    }
+                    const current = loadDailyGoalState();
+                    if (current && String(current.taskId) === String(taskId) && !current.completed) {
+                        clearDailyGoal(String(taskId));
+                        log(`Cleared daily goal: task ${taskId} deleted (${reason}).`);
+                    }
+                    return;
+                }
+                // On a non-vanish (absent-on-load) check, a single 'exists' is
+                // conclusive that the task is alive -> stop.
+                if (status === 'exists' && reason !== 'row-vanished') return;
+                // For a vanished row, 'exists' may be transient server lag before
+                // the deletion registers, so keep polling through the budget.
+                // 'unknown' also retries. If it stays 'exists' for the whole budget,
+                // the task genuinely still exists (e.g. rescheduled) -> we won't clear.
+                await sleep(450);
+            }
+        } finally {
+            goalCheckInFlight = false;
+        }
+    }
+
+    // Called on every render pass. Decides whether to run a deletion check based
+    // purely on DOM state transitions, so it fires immediately when a task is
+    // deleted and stays quiet otherwise.
+    function watchGoalTask() {
+        const goal = loadDailyGoalState();
+        if (!goal || !goal.taskId || goal.completed) {
+            goalRowSeenForId = null;
+            return;
+        }
+        const id = String(goal.taskId);
+
+        // Reset the "seen" memory when the goal changes to a new task.
+        if (goalRowSeenForId && goalRowSeenForId !== id) {
+            goalRowSeenForId = null;
+        }
+
+        const rowPresent = !!document.querySelector(`[data-item-id="${id}"]`);
+
+        if (rowPresent) {
+            // The task is right there in the list; it clearly exists.
+            goalRowSeenForId = id;
+            return;
+        }
+
+        // Row is absent. Two cases warrant a confirmation check:
+        //  (a) We had seen it before and it just vanished -> likely a delete.
+        //  (b) On (re)load we never saw it, but the list has rendered and it's not
+        //      there -> it may have been deleted while we were away.
+        const listRendered = !!document.querySelector('li.task_list_item, [data-testid="task-list-item"]');
+        const vanished = goalRowSeenForId === id;
+        const absentOnLoadedList = isDailyGoalPage() && listRendered;
+
+        if (!vanished && !absentOnLoadedList) return;
+
+        // Throttle repeated checks for the same id to avoid hammering the API when
+        // a task is legitimately just not on today's list.
+        const sameIdRecent = lastGoalCheckId === id && (Date.now() - lastGoalCheckAt) < 4000;
+        if (sameIdRecent) return;
+
+        goalRowSeenForId = null; // don't re-treat as "vanished" repeatedly
+        confirmAndClearIfDeleted(id, vanished ? 'row-vanished' : 'absent-on-load');
     }
 
     /* ==========================================================================
@@ -942,11 +1105,8 @@
                 background: var(--te-accent-subtle);
                 color: var(--te-accent);
                 user-select: none;
-                cursor: pointer;
-                transition: background-color 0.15s ease, opacity 0.15s ease;
-            }
-            .todoist-enhanced-task-goal-badge:hover {
-                background: rgba(228, 66, 54, 0.18);
+                cursor: default;
+                pointer-events: none;
             }
             .todoist-enhanced-task-goal-badge svg {
                 flex-shrink: 0;
@@ -1303,7 +1463,7 @@
             }
             .todoist-enhanced-cal-grid {
                 display: grid;
-                grid-template-columns: repeat(7, 1fr);
+                grid-template-columns: repeat(7, minmax(0, 1fr));
                 gap: 5px;
             }
             .todoist-enhanced-cal-day-header {
@@ -1363,7 +1523,7 @@
             }
             .todoist-enhanced-cal-task-pill {
                 display: flex;
-                align-items: center;
+                align-items: flex-start;
                 gap: 4px;
                 padding: 3px 5px;
                 border-radius: 4px;
@@ -1393,11 +1553,11 @@
                 flex-shrink: 0;
             }
             .todoist-enhanced-cal-task-title {
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
                 flex-grow: 1;
                 min-width: 0;
+                white-space: normal;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
         `;
         document.head.appendChild(style);
@@ -2318,8 +2478,7 @@
                     badge = document.createElement('span');
                     badge.className = 'todoist-enhanced-task-goal-badge';
                     badge.innerHTML = `${LUCIDE_ICONS.target(13)} <span>Hoofddoel</span>`;
-                    badge.title = 'Hoofddoel van vandaag (klik om te wissen)';
-                    badge.tabIndex = -1;
+                    badge.title = 'Hoofddoel van vandaag';
                     contentEl.appendChild(badge);
                 }
             } else if (badge) {
@@ -2430,14 +2589,14 @@
 
         // Intercept pointerdown and mousedown so task body/row never gains focus or keyboard shortcut active border
         document.addEventListener('pointerdown', (e) => {
-            if (e.target.closest('.todoist-enhanced-task-goal-btn, .todoist-enhanced-task-goal-badge')) {
+            if (e.target.closest('.todoist-enhanced-task-goal-btn')) {
                 e.preventDefault();
                 e.stopPropagation();
             }
         }, true);
 
         document.addEventListener('mousedown', (e) => {
-            if (e.target.closest('.todoist-enhanced-task-goal-btn, .todoist-enhanced-task-goal-badge')) {
+            if (e.target.closest('.todoist-enhanced-task-goal-btn')) {
                 e.preventDefault();
                 e.stopPropagation();
             }
@@ -2663,19 +2822,9 @@
                 return;
             }
 
-            // 9. Click inline goal badge beside task name
-            const taskGoalBadge = e.target.closest('.todoist-enhanced-task-goal-badge');
-            if (taskGoalBadge) {
-                e.preventDefault();
-                e.stopPropagation();
-                const item = taskGoalBadge.closest('li.task_list_item, [data-item-id]');
-                const itemId = item?.getAttribute('data-item-id') || item?.dataset.itemId;
-                const taskName = getTaskItemTitle(item);
-                const taskPriority = getTaskItemPriority(item);
-                if (itemId) setDailyGoal(itemId, taskName, taskPriority);
-                clearTaskFocus(item);
-                return;
-            }
+            // 9. The inline "Hoofddoel" badge beside the task name is a passive
+            // indicator only, so it has no click handler. Clicks fall through to
+            // Todoist's normal task behavior. Use the hover button to clear a goal.
 
             // 10. Native task completion checkbox listener
             const nativeCheckbox = e.target.closest('button.task_checkbox, [data-action-hint="task-complete"]');
@@ -2750,6 +2899,13 @@
             renderHeaderGoalButton();
             renderHeroFocusCard();
             renderTaskGoalButtons();
+
+            // Clear the goal if its task was deleted in Todoist. The moment the
+            // goal task's row disappears from a page where it was showing (a likely
+            // delete), kick off a rapid burst check so the banner clears almost
+            // instantly. Otherwise fall back to the slow background verification.
+            // Clear today's goal if its task was deleted in Todoist.
+            watchGoalTask();
         }, 80);
     }
 
@@ -2814,7 +2970,7 @@
         // Initial trigger
         scheduleUpdates();
 
-        log('Todoist: Enhanced v2.6.1 loaded.');
+        log('Todoist: Enhanced v2.7.0 loaded.');
     }
 
     if (document.readyState === 'loading') {

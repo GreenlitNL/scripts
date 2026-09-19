@@ -1,3 +1,5 @@
 .DS_Store
 Thumbs.db
 *.log
+# Local E2E test harness (Playwright) and saved browser session — never commit
+.e2e/
